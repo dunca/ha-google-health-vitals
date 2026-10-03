@@ -1,0 +1,48 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Google Health Vitals",
+        "description": "Reads extra metrics using the sign-in of an existing Google Health integration, so you don't sign in again.",
+        "data": {
+          "source_entry_id": "Google Health account"
+        }
+      }
+    },
+    "abort": {
+      "no_google_health": "Set up the Google Health integration first. This integration uses its sign-in.",
+      "already_configured": "Every Google Health account is already set up."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "oxygen_saturation": { "name": "Blood oxygen" },
+      "heart_rate_variability": { "name": "Heart rate variability" },
+      "respiratory_rate": { "name": "Breathing rate" },
+      "skin_temperature_variation": { "name": "Skin temperature variation" },
+      "vo2_max": { "name": "Cardio fitness" },
+      "deep_sleep": { "name": "Deep sleep" },
+      "light_sleep": { "name": "Light sleep" },
+      "rem_sleep": { "name": "REM sleep" },
+      "bedtime": { "name": "Bedtime" },
+      "wake_time": { "name": "Wake time" }
+    }
+  },
+  "exceptions": {
+    "source_removed": {
+      "message": "The Google Health integration this was set up with has been removed. Delete this entry and add it again."
+    },
+    "source_not_loaded": {
+      "message": "Waiting for the Google Health integration ({title}) to finish loading."
+    },
+    "oauth_unavailable": {
+      "message": "The Google Health sign-in is not available yet."
+    },
+    "source_auth": {
+      "message": "Google rejected the sign-in. Re-authenticate the Google Health integration ({title}); this one recovers by itself afterwards."
+    },
+    "communication_error": {
+      "message": "Could not reach the Google Health API."
+    }
+  }
+}
