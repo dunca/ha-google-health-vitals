@@ -155,7 +155,14 @@ async def history_api(mock_api: MagicMock) -> MagicMock:
     mock_api.steps.daily_rollup = AsyncMock(
         return_value=[_rollup(date(2026, 10, 1), 8000), _rollup(date(2026, 10, 2), 6000)]
     )
-    for name in ("distance", "active_energy_burned", "floors"):
+    for name in (
+        "distance",
+        "active_energy_burned",
+        "total_calories",
+        "floors",
+        "hydration_log",
+        "nutrition_log",
+    ):
         getattr(mock_api, name).daily_rollup = AsyncMock(return_value=[])
     return mock_api
 
@@ -281,3 +288,52 @@ async def test_import_refuses_to_overlap(
         await hass.services.async_call(DOMAIN, "import_history", {"days": 10}, blocking=True)
     release.set()
     await first
+
+
+async def test_failing_metric_is_skipped_and_rate_limits_retry(
+    hass: HomeAssistant,
+    vitals_entry: MockConfigEntry,
+    source_entry: MockConfigEntry,
+    history_api: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One broken metric doesn't stop the rest; a rate limit is waited out."""
+    from google_health_api.exceptions import (
+        HealthApiConnectionException,
+        HealthApiRateLimitException,
+    )
+
+    from custom_components.google_health_vitals import history
+
+    monkeypatch.setattr(history, "RATE_LIMIT_FIRST_WAIT", 0)
+    await hass.config.async_set_time_zone("Europe/Bucharest")
+    await hass.config_entries.async_setup(vitals_entry.entry_id)
+    await hass.async_block_till_done()
+    async_import_statistics(
+        hass,
+        {
+            "mean_type": StatisticMeanType.ARITHMETIC,
+            "has_sum": False,
+            "name": None,
+            "source": "recorder",
+            "statistic_id": "sensor.alex_vitals_blood_oxygen",
+            "unit_class": None,
+            "unit_of_measurement": "%",
+        },
+        [{"start": datetime(2026, 10, 3, 13, tzinfo=UTC), "mean": 97.1, "min": 97.1, "max": 97.1}],
+    )
+    await async_wait_recording_done(hass)
+
+    pages = history_api.daily_oxygen_saturation.list.return_value
+    history_api.daily_oxygen_saturation.list = AsyncMock(
+        side_effect=[HealthApiRateLimitException("slow down"), pages]
+    )
+    history_api.daily_resting_heart_rate.list = AsyncMock(
+        side_effect=HealthApiConnectionException("boom")
+    )
+    response = await hass.services.async_call(
+        DOMAIN, "import_history", {"days": 10}, blocking=True, return_response=True
+    )
+    result = response["Alex"]
+    assert "sensor.alex_vitals_blood_oxygen" in result["imported"]
+    assert result["skipped"]["resting_heart_rate"].startswith("failed")

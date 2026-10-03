@@ -8,6 +8,7 @@ so nothing Home Assistant recorded itself is touched.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import AsyncIterator, Callable, Iterable
@@ -22,6 +23,8 @@ from google_health_api.exceptions import (
     GoogleHealthApiError,
     HealthApiForbiddenException,
     HealthApiNotFoundException,
+    HealthApiRateLimitException,
+    HealthAuthException,
 )
 from google_health_api.model import Sleep
 from homeassistant.components.recorder import get_instance
@@ -32,7 +35,14 @@ from homeassistant.components.recorder.statistics import (
     get_metadata,
     statistics_during_period,
 )
-from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfLength, UnitOfMass, UnitOfTime
+from homeassistant.const import (
+    PERCENTAGE,
+    UnitOfEnergy,
+    UnitOfLength,
+    UnitOfMass,
+    UnitOfTime,
+    UnitOfVolume,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
@@ -44,8 +54,13 @@ _LOGGER = logging.getLogger(__name__)
 
 DAILY_PAGE_SIZE = 100
 SLEEP_PAGE_SIZE = 25
-ROLLUP_CHUNK_DAYS = 30
+# The API caps a daily rollup request at 90 days, or 14 for total calories.
+ROLLUP_CHUNK_DAYS = 90
+SHORT_ROLLUP_CHUNK_DAYS = 14
 MAX_PAGES = 400
+# Back-off when the API asks us to slow down: 5, 10, 20, 40, 80 seconds.
+RATE_LIMIT_RETRIES = 5
+RATE_LIMIT_FIRST_WAIT = 5
 
 
 @dataclass
@@ -113,12 +128,14 @@ async def _newest_first(
     return payloads
 
 
-async def _rollups(sub_api: Any, since: date, until: date) -> list[Any]:
+async def _rollups(
+    sub_api: Any, since: date, until: date, chunk_days: int = ROLLUP_CHUNK_DAYS
+) -> list[Any]:
     """Fetch daily rollups in chunks, oldest first."""
     points: list[Any] = []
     start = since
     while start < until:
-        end = min(start + timedelta(days=ROLLUP_CHUNK_DAYS), until)
+        end = min(start + timedelta(days=chunk_days), until)
         points.extend(await sub_api.daily_rollup(start_date=start, end_date=end))
         start = end
     return points
@@ -161,10 +178,29 @@ async def fetch_history(
     unavailable: dict[str, str] = {}
 
     async def collect(name: str, fetch: Callable[[], Any]) -> Any:
-        try:
-            return await fetch()
-        except (HealthApiForbiddenException, HealthApiNotFoundException) as err:
-            unavailable[name] = str(err)
+        """Fetch one metric; a failure skips that metric, not the import.
+
+        A rejected sign-in still aborts, since nothing else would work either.
+        """
+        wait = RATE_LIMIT_FIRST_WAIT
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            try:
+                return await fetch()
+            except HealthAuthException:
+                raise
+            except HealthApiRateLimitException as err:
+                if attempt == RATE_LIMIT_RETRIES:
+                    unavailable[name] = f"rate limited: {err}"
+                    return None
+                _LOGGER.debug("Rate limited fetching %s, waiting %ss", name, wait)
+                await asyncio.sleep(wait)
+                wait *= 2
+            except (HealthApiForbiddenException, HealthApiNotFoundException) as err:
+                unavailable[name] = f"not available: {err}"
+                return None
+            except GoogleHealthApiError as err:
+                unavailable[name] = f"failed: {err}"
+                return None
         return None
 
     def add(
@@ -263,27 +299,67 @@ async def fetch_history(
             add(integration, key, minutes, per_night(fn))
 
     # Daily totals. Today is still running, so stop at yesterday.
-    rollup_specs: list[tuple[str, Any, str | None, Callable[[Any], float]]] = [
-        ("steps", api.steps, None, lambda v: v.count_sum),
-        ("distance", api.distance, UnitOfLength.METERS, lambda v: v.millimeters_sum / 1000),
+    def by_day(points: list[Any], value_fn: Callable[[Any], float | None]) -> dict[date, float]:
+        values: dict[date, float] = {}
+        for point in points:
+            day = _civil_date(point.civil_start_time.date) if point.civil_start_time else None
+            if day is not None and (value := value_fn(point.data)) is not None:
+                values[day] = float(value)
+        return values
+
+    # Steps go first over the whole range: the first day with steps is when a
+    # tracker started recording, so the other totals only need fetching from
+    # there instead of across years of empty requests.
+    first_day = since
+    steps = await collect("steps", lambda: _rollups(api.steps, since, today))
+    if steps:
+        step_values = by_day(steps, lambda v: v.count_sum)
+        add(GOOGLE_HEALTH_DOMAIN, "steps", None, step_values, cumulative=True)
+        if active := [day for day, value in step_values.items() if value > 0]:
+            first_day = min(active)
+
+    def energy_kcal(v: Any) -> float | None:
+        return v.energy.kcal_sum if v.energy else None
+
+    def water_liters(v: Any) -> float | None:
+        return v.amount_consumed.milliliters_sum / 1000 if v.amount_consumed else None
+
+    rollup_specs: list[tuple[str, Any, str | None, Callable[[Any], float | None], int]] = [
+        (
+            "distance",
+            api.distance,
+            UnitOfLength.METERS,
+            lambda v: v.millimeters_sum / 1000,
+            ROLLUP_CHUNK_DAYS,
+        ),
         (
             "active_calories",
             api.active_energy_burned,
             UnitOfEnergy.KILO_CALORIE,
             lambda v: v.kcal_sum,
+            ROLLUP_CHUNK_DAYS,
         ),
-        ("floors", api.floors, None, lambda v: v.count_sum),
+        (
+            "total_calories",
+            api.total_calories,
+            UnitOfEnergy.KILO_CALORIE,
+            lambda v: v.kcal_sum,
+            SHORT_ROLLUP_CHUNK_DAYS,
+        ),
+        ("floors", api.floors, None, lambda v: v.count_sum, ROLLUP_CHUNK_DAYS),
+        ("hydration", api.hydration_log, UnitOfVolume.LITERS, water_liters, ROLLUP_CHUNK_DAYS),
+        (
+            "calories_consumed",
+            api.nutrition_log,
+            UnitOfEnergy.KILO_CALORIE,
+            energy_kcal,
+            ROLLUP_CHUNK_DAYS,
+        ),
     ]
-    for key, sub_api, unit, value_fn in rollup_specs:
-        points = await collect(key, lambda s=sub_api: _rollups(s, since, today))
+    for key, sub_api, unit, value_fn, chunk in rollup_specs:
+        points = await collect(key, lambda s=sub_api, c=chunk: _rollups(s, first_day, today, c))
         if points:
-            values = {
-                day: float(value_fn(point.data))
-                for point in points
-                if point.civil_start_time
-                and (day := _civil_date(point.civil_start_time.date)) is not None
-            }
-            add(GOOGLE_HEALTH_DOMAIN, key, unit, values, cumulative=True)
+            add(GOOGLE_HEALTH_DOMAIN, key, unit, by_day(points, value_fn), cumulative=True)
 
     return series, unavailable
 
@@ -376,7 +452,7 @@ async def async_import_history(
     except GoogleHealthApiError as err:
         raise RuntimeError(f"Google Health API error: {err}") from err
     for name, reason in unavailable.items():
-        result.skipped[name] = f"not available: {reason}"
+        result.skipped[name] = reason
 
     registry = er.async_get(hass)
     recorder = get_instance(hass)

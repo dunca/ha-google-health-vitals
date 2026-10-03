@@ -68,12 +68,14 @@ things up. To fill in the past, run the **Import history** action
 ```yaml
 action: google_health_vitals.import_history
 data:
-  days: 365
+  days: 7300
 ```
 
 It fetches past days from Google Health and adds them to the long-term statistics
 of these sensors and of the Google Health integration's own resting heart rate,
-weight, body fat, sleep, steps, distance, active calories and floors. Each day becomes
+weight, body fat, sleep, steps, distance, active and total calories, floors, water and
+calories eaten. `days` goes up to 7300 (20 years); asking for more than Google has is
+fine, it imports what exists. Each day becomes
 one statistics row at local midnight (the wake-up day for sleep), so daily charts
 such as the statistics graph card show it.
 
@@ -81,6 +83,9 @@ such as the statistics graph card show it.
   just rewrites the imported days with the same values.
 - Daily totals like steps are chained onto the recorded running total, so today's
   count stays right.
+- Daily totals are fetched from the first day with steps, so a long range doesn't
+  mean years of empty requests. If Google asks it to slow down it waits and retries,
+  and a metric that fails is skipped and reported rather than stopping the import.
 - The response lists how many days were imported per sensor, and why any sensor
   was skipped (for example a metric your device doesn't record).
 - History lives in statistics, not in the state history, so the history graph card

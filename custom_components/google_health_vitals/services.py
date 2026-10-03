@@ -20,11 +20,15 @@ from .const import DOMAIN, GOOGLE_HEALTH_DOMAIN
 from .history import async_import_history
 
 ATTR_DAYS = "days"
+# Twenty years: older than any tracker data the API is likely to hold.
+MAX_DAYS = 7300
 SERVICE_IMPORT_HISTORY = "import_history"
 
 IMPORT_HISTORY_SCHEMA = vol.Schema(
     {
-        vol.Optional(ATTR_DAYS, default=365): vol.All(vol.Coerce(int), vol.Range(min=1, max=3650)),
+        vol.Optional(ATTR_DAYS, default=365): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=MAX_DAYS)
+        ),
         vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
     }
 )
