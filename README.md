@@ -65,7 +65,7 @@ version as the built-in integration, so nothing extra gets installed.
 ## Development
 
 ```bash
-uv venv && uv pip install "homeassistant==2026.9.4" pytest-homeassistant-custom-component
+uv venv && uv pip install "homeassistant==2026.9.4" "google-health-api==0.9.0" pytest-homeassistant-custom-component
 .venv/bin/pytest
 ```
 
