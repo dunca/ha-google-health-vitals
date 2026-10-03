@@ -252,3 +252,32 @@ async def test_import_history(
     )
     assert [row["sum"] for row in again[steps]] == sums
     assert [row["mean"] for row in again[spo2]] == [96.0, 97.0, 98.0, 97.1]
+
+
+async def test_import_refuses_to_overlap(
+    hass: HomeAssistant, vitals_entry: MockConfigEntry, history_api: MagicMock
+) -> None:
+    """A second import while one runs is refused instead of double-shifting sums."""
+    import asyncio
+
+    from homeassistant.exceptions import ServiceValidationError
+
+    await hass.config_entries.async_setup(vitals_entry.entry_id)
+    await hass.async_block_till_done()
+    release = asyncio.Event()
+
+    async def slow_rollup(**_: object) -> list:
+        await release.wait()
+        return []
+
+    history_api.steps.daily_rollup = AsyncMock(side_effect=slow_rollup)
+    first = hass.async_create_task(
+        hass.services.async_call(DOMAIN, "import_history", {"days": 10}, blocking=True)
+    )
+    await asyncio.sleep(0)
+    for _ in range(20):
+        await asyncio.sleep(0)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(DOMAIN, "import_history", {"days": 10}, blocking=True)
+    release.set()
+    await first

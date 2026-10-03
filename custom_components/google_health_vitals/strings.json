@@ -75,6 +75,9 @@
     },
     "import_failed": {
       "message": "Importing history failed: {error}"
+    },
+    "import_running": {
+      "message": "An import is already running. Wait for it to finish."
     }
   },
   "services": {

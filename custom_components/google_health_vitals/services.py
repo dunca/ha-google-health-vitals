@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import voluptuous as vol
 from homeassistant.const import ATTR_CONFIG_ENTRY_ID
 from homeassistant.core import (
@@ -31,8 +33,18 @@ IMPORT_HISTORY_SCHEMA = vol.Schema(
 @callback
 def async_setup_services(hass: HomeAssistant) -> None:
     """Register the import_history action."""
+    # Two overlapping imports would both shift the recorded sums.
+    lock = asyncio.Lock()
 
     async def import_history(call: ServiceCall) -> ServiceResponse:
+        if lock.locked():
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="import_running"
+            )
+        async with lock:
+            return await _import(call)
+
+    async def _import(call: ServiceCall) -> ServiceResponse:
         entries = hass.config_entries.async_loaded_entries(DOMAIN)
         if entry_id := call.data.get(ATTR_CONFIG_ENTRY_ID):
             entries = [entry for entry in entries if entry.entry_id == entry_id]
