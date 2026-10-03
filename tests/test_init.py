@@ -43,9 +43,14 @@ async def test_sensors(
     vo2 = hass.states.get("sensor.alex_vitals_cardio_fitness")
     assert vo2.state == "44.5"
     assert vo2.attributes["fitness_level"] == "GOOD"
-    assert hass.states.get("sensor.alex_vitals_deep_sleep").state == "62"
-    assert hass.states.get("sensor.alex_vitals_light_sleep").state == "280"
-    assert hass.states.get("sensor.alex_vitals_rem_sleep").state == "109"
+    deep = hass.states.get("sensor.alex_vitals_deep_sleep")
+    assert deep.state == "1.033417"
+    assert deep.attributes["minutes"] == 62
+    assert deep.attributes["unit_of_measurement"] == "h"
+    assert hass.states.get("sensor.alex_vitals_time_asleep").attributes["minutes"] == 451
+    assert hass.states.get("sensor.alex_vitals_time_asleep").state == "7.51675"
+    assert hass.states.get("sensor.alex_vitals_light_sleep").attributes["minutes"] == 280
+    assert hass.states.get("sensor.alex_vitals_rem_sleep").attributes["minutes"] == 109
     assert hass.states.get("sensor.alex_vitals_bedtime").state == "2026-10-02T20:24:00+00:00"
     assert hass.states.get("sensor.alex_vitals_wake_time").state == "2026-10-03T04:01:00+00:00"
 

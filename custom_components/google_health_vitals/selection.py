@@ -56,6 +56,19 @@ def main_sleep(sessions: Iterable[Sleep], since: datetime | None = None) -> Slee
     return max(main or finished, key=lambda item: item[0])[1]
 
 
+def display_hours(minutes: int | None) -> float | None:
+    """Convert whole minutes to hours that the frontend shows as e.g. "2h 1m".
+
+    The frontend renders duration sensors in hours by flooring the fractional
+    part times 60, so 121 / 60 = 2.01666… shows as "2h 0m" because the float
+    lands a hair below one minute. Adding 0.3 s keeps every value just above
+    its minute without changing what it means.
+    """
+    if minutes is None:
+        return None
+    return round((minutes + 0.005) / 60, 6)
+
+
 def stage_minutes(session: Sleep | None, stage: str) -> int | None:
     """Return the total minutes spent in one sleep stage, e.g. ``DEEP``."""
     if session is None or session.summary is None:

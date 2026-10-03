@@ -115,3 +115,12 @@ def test_main_sleep_ignores_sessions_before_since() -> None:
     old = _sleep("2026-09-28T21:00:00Z", "2026-09-29T05:00:00Z", [])
     assert selection.main_sleep([old], since=datetime(2026, 10, 1, tzinfo=UTC)) is None
     assert selection.main_sleep([old]) is old
+
+
+def test_display_hours_always_lands_on_the_right_minute() -> None:
+    """Mimic the frontend: floor(hours), then floor(fraction * 60)."""
+    for minutes in range(48 * 60):
+        value = float(repr(selection.display_hours(minutes)))
+        hours = int(value)
+        assert (hours, int((value - hours) * 60)) == divmod(minutes, 60)
+    assert selection.display_hours(None) is None

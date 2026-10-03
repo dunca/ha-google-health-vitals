@@ -16,16 +16,42 @@
   },
   "entity": {
     "sensor": {
-      "oxygen_saturation": { "name": "Blood oxygen" },
-      "heart_rate_variability": { "name": "Heart rate variability" },
-      "respiratory_rate": { "name": "Breathing rate" },
-      "skin_temperature_variation": { "name": "Skin temperature variation" },
-      "vo2_max": { "name": "Cardio fitness" },
-      "deep_sleep": { "name": "Deep sleep" },
-      "light_sleep": { "name": "Light sleep" },
-      "rem_sleep": { "name": "REM sleep" },
-      "bedtime": { "name": "Bedtime" },
-      "wake_time": { "name": "Wake time" }
+      "oxygen_saturation": {
+        "name": "Blood oxygen"
+      },
+      "heart_rate_variability": {
+        "name": "Heart rate variability"
+      },
+      "respiratory_rate": {
+        "name": "Breathing rate"
+      },
+      "skin_temperature_variation": {
+        "name": "Skin temperature variation"
+      },
+      "vo2_max": {
+        "name": "Cardio fitness"
+      },
+      "time_asleep": {
+        "name": "Time asleep"
+      },
+      "time_in_bed": {
+        "name": "Time in bed"
+      },
+      "deep_sleep": {
+        "name": "Deep sleep"
+      },
+      "light_sleep": {
+        "name": "Light sleep"
+      },
+      "rem_sleep": {
+        "name": "REM sleep"
+      },
+      "bedtime": {
+        "name": "Bedtime"
+      },
+      "wake_time": {
+        "name": "Wake time"
+      }
     }
   },
   "exceptions": {

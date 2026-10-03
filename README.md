@@ -11,8 +11,13 @@ doesn't cover yet:
 | Breathing rate | br/min | Nightly average |
 | Skin temperature variation | °C | Last night compared with your baseline |
 | Cardio fitness | mL/kg/min | VO2 max. Attributes: `fitness_level`, `estimated`, `date` |
-| Deep sleep, Light sleep, REM sleep | min | From the most recent main sleep (naps are skipped) |
+| Time asleep, Time in bed | h | From the most recent main sleep (naps are skipped) |
+| Deep sleep, Light sleep, REM sleep | h | Same session. Attribute: `minutes` |
 | Bedtime, Wake time | timestamp | Start and end of that sleep |
+
+Sleep durations are in hours so Home Assistant shows them as "7h 31m". Each one has
+the exact whole minutes in its `minutes` attribute, which is the better value for
+automations.
 
 Every daily value carries a `date` attribute: the day Google computed it for. Values
 only appear once your device has synced and Google has processed the night, and a

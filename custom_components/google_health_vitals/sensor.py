@@ -23,7 +23,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import VitalsConfigEntry
 from .const import DOMAIN, GOOGLE_HEALTH_DOMAIN
 from .coordinator import VitalsCoordinator, VitalsData
-from .selection import parse_time, stage_minutes
+from .selection import display_hours, parse_time, stage_minutes
 
 
 def _date(payload: Any) -> str | None:
@@ -32,6 +32,12 @@ def _date(payload: Any) -> str | None:
     if date is None or date.year is None:
         return None
     return f"{date.year:04d}-{date.month or 1:02d}-{date.day or 1:02d}"
+
+
+def _summary_minutes(data: VitalsData, field: str) -> int | None:
+    if data.sleep is None or data.sleep.summary is None:
+        return None
+    return getattr(data.sleep.summary, field)
 
 
 def _skin_temperature_variation(data: VitalsData) -> float | None:
@@ -132,16 +138,28 @@ SENSORS: tuple[VitalsSensorDescription, ...] = (
             else {}
         ),
     ),
+    # Sleep durations are reported in hours so the frontend shows "7h 31m";
+    # see display_hours for why the value is nudged. The exact whole minutes are
+    # in the `minutes` attribute for automations.
     *(
         VitalsSensorDescription(
-            key=f"{stage.lower()}_sleep",
-            translation_key=f"{stage.lower()}_sleep",
+            key=key,
+            translation_key=key,
             device_class=SensorDeviceClass.DURATION,
-            native_unit_of_measurement=UnitOfTime.MINUTES,
+            native_unit_of_measurement=UnitOfTime.HOURS,
             state_class=SensorStateClass.MEASUREMENT,
-            value_fn=lambda d, stage=stage: stage_minutes(d.sleep, stage),
+            value_fn=lambda d, minutes_fn=minutes_fn: display_hours(minutes_fn(d)),
+            attrs_fn=lambda d, minutes_fn=minutes_fn: (
+                {"minutes": minutes} if (minutes := minutes_fn(d)) is not None else {}
+            ),
         )
-        for stage in ("DEEP", "LIGHT", "REM")
+        for key, minutes_fn in (
+            ("time_asleep", lambda d: _summary_minutes(d, "minutes_asleep")),
+            ("time_in_bed", lambda d: _summary_minutes(d, "minutes_in_sleep_period")),
+            ("deep_sleep", lambda d: stage_minutes(d.sleep, "DEEP")),
+            ("light_sleep", lambda d: stage_minutes(d.sleep, "LIGHT")),
+            ("rem_sleep", lambda d: stage_minutes(d.sleep, "REM")),
+        )
     ),
     VitalsSensorDescription(
         key="bedtime",

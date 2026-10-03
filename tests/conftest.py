@@ -169,6 +169,7 @@ def mock_api() -> Generator[MagicMock]:
                     "metadata": {"nap": False},
                     "summary": {
                         "minutesAsleep": 451,
+                        "minutesInSleepPeriod": 457,
                         "stagesSummary": [
                             {"type": "DEEP", "minutes": 62},
                             {"type": "LIGHT", "minutes": 280},

@@ -1,16 +1,42 @@
 {
   "entity": {
     "sensor": {
-      "oxygen_saturation": { "default": "mdi:water-percent" },
-      "heart_rate_variability": { "default": "mdi:heart-flash" },
-      "respiratory_rate": { "default": "mdi:lungs" },
-      "skin_temperature_variation": { "default": "mdi:thermometer-lines" },
-      "vo2_max": { "default": "mdi:run-fast" },
-      "deep_sleep": { "default": "mdi:sleep" },
-      "light_sleep": { "default": "mdi:weather-night" },
-      "rem_sleep": { "default": "mdi:eye-refresh-outline" },
-      "bedtime": { "default": "mdi:bed-clock" },
-      "wake_time": { "default": "mdi:alarm" }
+      "oxygen_saturation": {
+        "default": "mdi:water-percent"
+      },
+      "heart_rate_variability": {
+        "default": "mdi:heart-flash"
+      },
+      "respiratory_rate": {
+        "default": "mdi:lungs"
+      },
+      "skin_temperature_variation": {
+        "default": "mdi:thermometer-lines"
+      },
+      "vo2_max": {
+        "default": "mdi:run-fast"
+      },
+      "time_asleep": {
+        "default": "mdi:power-sleep"
+      },
+      "time_in_bed": {
+        "default": "mdi:bed"
+      },
+      "deep_sleep": {
+        "default": "mdi:sleep"
+      },
+      "light_sleep": {
+        "default": "mdi:weather-night"
+      },
+      "rem_sleep": {
+        "default": "mdi:eye-refresh-outline"
+      },
+      "bedtime": {
+        "default": "mdi:bed-clock"
+      },
+      "wake_time": {
+        "default": "mdi:alarm"
+      }
     }
   }
 }
