@@ -69,6 +69,28 @@
     },
     "communication_error": {
       "message": "Could not reach the Google Health API."
+    },
+    "not_loaded": {
+      "message": "Google Health Vitals isn't set up or loaded."
+    },
+    "import_failed": {
+      "message": "Importing history failed: {error}"
+    }
+  },
+  "services": {
+    "import_history": {
+      "name": "Import history",
+      "description": "Fetches past days from Google Health and adds them to the long-term statistics, so charts show history from before Home Assistant started recording. Safe to run again: days that are already recorded are left alone, and imported days are overwritten with the same values.",
+      "fields": {
+        "days": {
+          "name": "Days",
+          "description": "How many days back to import."
+        },
+        "config_entry_id": {
+          "name": "Account",
+          "description": "Only import for this account. Leave empty for all."
+        }
+      }
     }
   }
 }

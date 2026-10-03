@@ -1,0 +1,14 @@
+import_history:
+  fields:
+    days:
+      default: 365
+      selector:
+        number:
+          min: 1
+          max: 3650
+          unit_of_measurement: days
+          mode: box
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: google_health_vitals

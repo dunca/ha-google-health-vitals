@@ -38,5 +38,10 @@
         "default": "mdi:alarm"
       }
     }
+  },
+  "services": {
+    "import_history": {
+      "service": "mdi:history"
+    }
   }
 }
