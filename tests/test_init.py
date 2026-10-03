@@ -15,7 +15,12 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.google_health_vitals.const import DOMAIN, GOOGLE_HEALTH_DOMAIN
+from custom_components.google_health_vitals.const import (
+    DOMAIN,
+    GOOGLE_HEALTH_DOMAIN,
+    RETRY_INTERVAL,
+    UPDATE_INTERVAL,
+)
 
 
 async def _setup(hass: HomeAssistant, entry: MockConfigEntry) -> None:
@@ -83,14 +88,22 @@ async def test_metric_not_granted_is_unknown(
 async def test_transient_error_keeps_last_value(
     hass: HomeAssistant, vitals_entry: MockConfigEntry, mock_api: MagicMock
 ) -> None:
-    """One failed request keeps that sensor's previous value."""
+    """One failed request keeps that sensor's value and retries soon."""
     await _setup(hass, vitals_entry)
+    coordinator = vitals_entry.runtime_data
+    working = mock_api.daily_oxygen_saturation.list
     mock_api.daily_oxygen_saturation.list = AsyncMock(
-        side_effect=HealthApiConnectionException("timeout")
+        side_effect=HealthApiConnectionException("503")
     )
-    await vitals_entry.runtime_data.async_refresh()
+    await coordinator.async_refresh()
     await hass.async_block_till_done()
     assert hass.states.get("sensor.alex_vitals_blood_oxygen").state == "96.4"
+    assert coordinator.update_interval == RETRY_INTERVAL
+
+    # Back to the normal pace once it succeeds.
+    mock_api.daily_oxygen_saturation.list = working
+    await coordinator.async_refresh()
+    assert coordinator.update_interval == UPDATE_INTERVAL
 
 
 async def test_auth_error_makes_sensors_unavailable(

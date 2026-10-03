@@ -28,7 +28,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .const import DAILY_LOOKBACK, DOMAIN, SLEEP_LOOKBACK, UPDATE_INTERVAL
+from .const import DAILY_LOOKBACK, DOMAIN, RETRY_INTERVAL, SLEEP_LOOKBACK, UPDATE_INTERVAL
 from .selection import latest_daily, main_sleep
 
 if TYPE_CHECKING:
@@ -140,6 +140,7 @@ class VitalsCoordinator(DataUpdateCoordinator[VitalsData]):
                 else latest_daily(payloads)
             )
 
+        self.update_interval = RETRY_INTERVAL if transient_failures else UPDATE_INTERVAL
         if transient_failures == len(requests):
             raise UpdateFailed(translation_domain=DOMAIN, translation_key="communication_error")
         return replace(VitalsData(), **values)

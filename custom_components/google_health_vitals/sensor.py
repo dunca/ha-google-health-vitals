@@ -109,7 +109,7 @@ SENSORS: tuple[VitalsSensorDescription, ...] = (
         # converted to Fahrenheit as if it were an absolute reading.
         native_unit_of_measurement="°C",
         state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=1,
+        suggested_display_precision=2,
         value_fn=_skin_temperature_variation,
         attrs_fn=lambda d: (
             {
