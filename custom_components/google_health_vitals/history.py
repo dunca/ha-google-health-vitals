@@ -299,25 +299,34 @@ def row_start(day: date, tz: ZoneInfo) -> datetime:
 
 
 def cumulative_rows(
-    values: dict[date, float], tz: ZoneInfo, before: datetime, baseline_sum: float
+    values: dict[date, float], tz: ZoneInfo, before: datetime
 ) -> list[StatisticData]:
-    """Build sum rows for daily totals that end exactly at baseline_sum.
+    """Build sum rows for daily totals, counting up from zero.
 
-    Each day's row at local midnight carries that day's total as its change, and
-    the last imported row's sum is baseline_sum so the first recorded row keeps
-    its own change.
+    Each day's row at local midnight carries that day's total as its change.
+    Starting at zero matters: a chart treats the very first row's sum as its
+    change, so a negative start would show as a large negative day.
     """
     # A day that already has recorded rows is counted by them, so stop the day
     # before the first recorded row.
     first_day = before.astimezone(tz).date()
-    days = sorted(day for day in values if day < first_day)
     rows: list[StatisticData] = []
-    running = baseline_sum
-    for day in reversed(days):
+    running = 0.0
+    for day in sorted(day for day in values if day < first_day):
+        running += values[day]
         rows.append(StatisticData(start=row_start(day, tz), state=values[day], sum=running))
-        running -= values[day]
-    rows.reverse()
     return rows
+
+
+def recorded_sum_adjustment(rows: list[StatisticData], first: dict[str, Any]) -> float:
+    """Return how far to shift the recorded sums so they continue the import.
+
+    The first recorded row's change should stay what it counted on its own:
+    the day's total up to then, which is its state.
+    """
+    imported_total = rows[-1]["sum"] if rows else 0.0
+    wanted = imported_total + (first.get("state") or 0.0)
+    return wanted - (first.get("sum") or 0.0)
 
 
 def mean_rows(values: dict[date, float], tz: ZoneInfo, before: datetime) -> list[StatisticData]:
@@ -333,7 +342,8 @@ def mean_rows(values: dict[date, float], tz: ZoneInfo, before: datetime) -> list
 
 
 def _convert(value: float, from_unit: str | None, to_unit: str | None) -> float:
-    if from_unit == to_unit:
+    # Counts like steps have no unit here but a label ("steps") in statistics.
+    if from_unit == to_unit or from_unit is None:
         return value
     converter = STATISTIC_UNIT_TO_UNIT_CONVERTER.get(from_unit)
     if converter is None or to_unit not in converter.VALID_UNITS:
@@ -341,7 +351,10 @@ def _convert(value: float, from_unit: str | None, to_unit: str | None) -> float:
     return converter.convert(value, from_unit, to_unit)
 
 
-def _first_row(hass: HomeAssistant, statistic_id: str, since: datetime) -> dict[str, Any] | None:
+def _first_recorded_row(
+    hass: HomeAssistant, statistic_id: str, since: datetime
+) -> dict[str, Any] | None:
+    """Return the first hourly row at or after `since`, the entity's creation."""
     stats = statistics_during_period(
         hass, since, None, {statistic_id}, "hour", None, {"state", "sum", "mean"}
     )
@@ -367,14 +380,12 @@ async def async_import_history(
 
     registry = er.async_get(hass)
     recorder = get_instance(hass)
-    window_start = datetime.combine(
-        dt_util.now(tz).date() - timedelta(days=days + 1), time(), tzinfo=tz
-    )
 
     for series in series_list:
         unique_id = f"{entity_unique_ids[series.integration]}_{series.key}"
         entity_id = registry.async_get_entity_id("sensor", series.integration, unique_id)
-        if entity_id is None:
+        entry = registry.async_get(entity_id) if entity_id else None
+        if entity_id is None or entry is None:
             result.skipped[f"{series.integration}.{series.key}"] = "no such entity"
             continue
         if not series.values:
@@ -390,7 +401,11 @@ async def async_import_history(
             result.skipped[entity_id] = "no statistics yet; try again in an hour"
             continue
         meta = metadata[1]
-        first = await recorder.async_add_executor_job(_first_row, hass, entity_id, window_start)
+        # Rows from before the entity existed can only be imported ones, so the
+        # first row after its creation is the first one Home Assistant recorded.
+        # That keeps a re-run from mistaking earlier imports for recordings.
+        created = entry.created_at.replace(minute=0, second=0, microsecond=0)
+        first = await recorder.async_add_executor_job(_first_recorded_row, hass, entity_id, created)
         before = dt_util.utc_from_timestamp(first["start"]) if first else dt_util.utcnow()
         unit = meta["unit_of_measurement"]
         try:
@@ -405,12 +420,7 @@ async def async_import_history(
             if not meta["has_sum"]:
                 result.skipped[entity_id] = "statistics have no sum"
                 continue
-            baseline = 0.0
-            if first:
-                # The first recorded row's change covers today's steps up to
-                # then, so imported days end at its sum minus that state.
-                baseline = (first.get("sum") or 0.0) - (first.get("state") or 0.0)
-            rows = cumulative_rows(values, tz, before, baseline)
+            rows = cumulative_rows(values, tz, before)
         else:
             rows = mean_rows(values, tz, before)
 
@@ -418,6 +428,12 @@ async def async_import_history(
             result.skipped[entity_id] = "nothing older than what is already recorded"
             continue
         async_import_statistics(hass, meta, rows)
+        if series.cumulative and first:
+            # Queued after the import, so it runs once the rows are in.
+            adjustment = recorded_sum_adjustment(rows, first)
+            if abs(adjustment) > 1e-6:
+                # Same unit as the statistics, so no conversion happens.
+                recorder.async_adjust_statistics(entity_id, before, adjustment, unit)  # type: ignore[arg-type]
         result.imported[entity_id] = len(rows)
         _LOGGER.debug("Imported %s days for %s", len(rows), entity_id)
 

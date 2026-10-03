@@ -26,6 +26,7 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
 from custom_components.google_health_vitals.const import DOMAIN, GOOGLE_HEALTH_DOMAIN
 from custom_components.google_health_vitals.history import (
     cumulative_rows,
+    recorded_sum_adjustment,
     row_start,
     sleep_by_wake_day,
 )
@@ -44,20 +45,25 @@ def test_row_start_is_local_midnight_on_a_utc_hour() -> None:
     assert row_start(date(2026, 10, 1), ZoneInfo("Asia/Kolkata")).minute == 0
 
 
-def test_cumulative_rows_chain_into_the_recorded_sum() -> None:
+def test_cumulative_rows_count_up_from_zero() -> None:
     values = {date(2026, 9, 29): 8000.0, date(2026, 9, 30): 6000.0, date(2026, 10, 3): 999.0}
     first_recorded = datetime(2026, 10, 3, 13, tzinfo=UTC)
-    rows = cumulative_rows(values, TZ, first_recorded, baseline_sum=-3000.0)
+    rows = cumulative_rows(values, TZ, first_recorded)
     # The day that's already recorded is left out.
     assert [row["start"].astimezone(TZ).date() for row in rows] == [
         date(2026, 9, 29),
         date(2026, 9, 30),
     ]
-    # Each row's change (sum minus previous sum) is that day's total, and the
-    # last one ends exactly at the baseline.
-    assert rows[-1]["sum"] == -3000.0
-    assert rows[-1]["sum"] - rows[0]["sum"] == 6000.0
+    assert [row["sum"] for row in rows] == [8000.0, 14000.0]
     assert rows[0]["state"] == 8000.0
+
+
+def test_recorded_sum_adjustment_keeps_the_first_recorded_change() -> None:
+    rows = cumulative_rows({date(2026, 9, 30): 6000.0}, TZ, datetime(2026, 10, 3, tzinfo=UTC))
+    # Recorded: 3000 steps so far today, sum restarted at 0.
+    assert recorded_sum_adjustment(rows, {"state": 3000.0, "sum": 0.0}) == 9000.0
+    # Already continuous (a re-run): nothing to shift.
+    assert recorded_sum_adjustment(rows, {"state": 3000.0, "sum": 9000.0}) == 0.0
 
 
 def _sleep(start: str, end: str, minutes: int, nap: bool = False) -> Sleep:
@@ -184,7 +190,7 @@ async def test_import_history(
     for statistic_id, unit, has_sum, row in (
         (spo2, "%", False, {"start": recorded, "mean": 97.1, "min": 97.1, "max": 97.1}),
         (rhr, "bpm", False, {"start": recorded, "mean": 56, "min": 56, "max": 56}),
-        (steps, None, True, {"start": recorded, "state": 3000, "sum": 0}),
+        (steps, "steps", True, {"start": recorded, "state": 3000, "sum": 0}),
     ):
         async_import_statistics(
             hass,
@@ -227,3 +233,22 @@ async def test_import_history(
     sums = [row["sum"] for row in step_rows]
     assert [b - a for a, b in zip(sums, sums[1:], strict=False)] == [6000, 3000]
     assert step_rows[0]["state"] == 8000
+    assert sums[0] == 8000  # counts up from zero, no negative first change
+
+    # Running it again changes nothing.
+    await hass.services.async_call(
+        DOMAIN, "import_history", {"days": 10}, blocking=True, return_response=True
+    )
+    await async_wait_recording_done(hass)
+    again = await hass.async_add_executor_job(
+        statistics_during_period,
+        hass,
+        datetime(2026, 9, 1, tzinfo=UTC),
+        None,
+        {spo2, steps},
+        "hour",
+        None,
+        {"mean", "sum", "state"},
+    )
+    assert [row["sum"] for row in again[steps]] == sums
+    assert [row["mean"] for row in again[spo2]] == [96.0, 97.0, 98.0, 97.1]
