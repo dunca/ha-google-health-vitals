@@ -75,6 +75,7 @@ class VitalsCoordinator(DataUpdateCoordinator[VitalsData]):
         self.api = api
         self.source = source
         self._unavailable: set[str] = set()
+        self._failing: set[str] = set()
 
     async def _async_update_data(self) -> VitalsData:
         now = dt_util.utcnow()
@@ -95,9 +96,10 @@ class VitalsCoordinator(DataUpdateCoordinator[VitalsData]):
             "vo2_max": self.api.daily_vo2_max.list(
                 start_time=daily_since, page_size=DAILY_PAGE_SIZE
             ),
-            "sleep": self.api.sleep.list(
-                start_time=now - SLEEP_LOOKBACK, page_size=SLEEP_PAGE_SIZE
-            ),
+            # The API rejects a time filter on sleep sessions (400
+            # INVALID_DATA_POINT_FILTER_DATA_TYPE_MEMBER), so fetch the newest
+            # sessions unfiltered and drop old ones in main_sleep.
+            "sleep": self.api.sleep.list(page_size=SLEEP_PAGE_SIZE),
         }
         results = await asyncio.gather(*requests.values(), return_exceptions=True)
 
@@ -119,7 +121,10 @@ class VitalsCoordinator(DataUpdateCoordinator[VitalsData]):
                 values[key] = None
                 continue
             if isinstance(result, GoogleHealthApiError):
-                _LOGGER.debug("Fetching %s failed, keeping last value: %s", key, result)
+                # Warn on the first failure so a persistent one isn't hidden.
+                log = _LOGGER.debug if key in self._failing else _LOGGER.warning
+                log("Fetching %s failed, keeping last value: %s", key, result)
+                self._failing.add(key)
                 transient_failures += 1
                 values[key] = getattr(previous, key)
                 continue
@@ -127,8 +132,13 @@ class VitalsCoordinator(DataUpdateCoordinator[VitalsData]):
                 raise result
 
             self._unavailable.discard(key)
+            self._failing.discard(key)
             payloads = [point.data for point in result.data_points]
-            values[key] = main_sleep(payloads) if key == "sleep" else latest_daily(payloads)
+            values[key] = (
+                main_sleep(payloads, since=now - SLEEP_LOOKBACK)
+                if key == "sleep"
+                else latest_daily(payloads)
+            )
 
         if transient_failures == len(requests):
             raise UpdateFailed(translation_domain=DOMAIN, translation_key="communication_error")

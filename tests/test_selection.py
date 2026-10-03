@@ -1,6 +1,7 @@
 """Tests for picking data points out of API responses."""
 
 import importlib.util
+from datetime import UTC, datetime
 from pathlib import Path
 
 from google_health_api.model import (
@@ -108,3 +109,9 @@ def test_parse_time() -> None:
     assert selection.parse_time("2026-10-03T04:01:00Z").hour == 4
     assert selection.parse_time("not a time") is None
     assert selection.parse_time(None) is None
+
+
+def test_main_sleep_ignores_sessions_before_since() -> None:
+    old = _sleep("2026-09-28T21:00:00Z", "2026-09-29T05:00:00Z", [])
+    assert selection.main_sleep([old], since=datetime(2026, 10, 1, tzinfo=UTC)) is None
+    assert selection.main_sleep([old]) is old

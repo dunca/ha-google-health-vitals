@@ -2,6 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from google_health_api.exceptions import (
     HealthApiConnectionException,
     HealthApiScopeInsufficientException,
@@ -121,3 +122,25 @@ async def test_source_removed(
     await hass.config_entries.async_remove(source_entry.entry_id)
     await _setup(hass, vitals_entry)
     assert vitals_entry.state is ConfigEntryState.SETUP_ERROR
+
+
+async def test_sleep_requested_without_time_filter(
+    hass: HomeAssistant, vitals_entry: MockConfigEntry, mock_api: MagicMock
+) -> None:
+    """The API rejects a time filter on sleep, so none is sent."""
+    await _setup(hass, vitals_entry)
+    assert "start_time" not in mock_api.sleep.list.call_args.kwargs
+
+
+async def test_persistent_failure_is_logged_once_as_warning(
+    hass: HomeAssistant,
+    vitals_entry: MockConfigEntry,
+    mock_api: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failing metric warns once, then stays quiet until it recovers."""
+    mock_api.sleep.list = AsyncMock(side_effect=HealthApiConnectionException("bad request"))
+    await _setup(hass, vitals_entry)
+    await vitals_entry.runtime_data.async_refresh()
+    warnings = [r for r in caplog.records if r.levelname == "WARNING" and "sleep" in r.message]
+    assert len(warnings) == 1

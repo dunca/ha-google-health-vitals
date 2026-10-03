@@ -44,6 +44,12 @@ def skip_google_health_dependency() -> Generator[None]:
         yield
 
 
+@pytest.fixture(autouse=True)
+def frozen_now(freezer) -> None:
+    """Pin the clock to the morning after the fixture night."""
+    freezer.move_to("2026-10-03T12:00:00+00:00")
+
+
 @pytest.fixture
 def source_entry(hass: HomeAssistant) -> MockConfigEntry:
     """A loaded Google Health entry with its account device."""

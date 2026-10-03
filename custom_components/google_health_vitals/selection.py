@@ -36,25 +36,24 @@ def parse_time(value: str | None) -> datetime | None:
         return None
 
 
-def main_sleep(sessions: Iterable[Sleep]) -> Sleep | None:
+def main_sleep(sessions: Iterable[Sleep], since: datetime | None = None) -> Sleep | None:
     """Return the most recent finished, non-nap sleep session.
 
-    Falls back to the most recent finished nap when no main sleep exists, so a
-    day with only a nap still shows something.
+    Sessions that ended before ``since`` are ignored. Falls back to the most
+    recent finished nap when no main sleep exists, so a day with only a nap
+    still shows something.
     """
-    finished = [
-        session
-        for session in sessions
-        if session.summary is not None and parse_time(session.end_time) is not None
-    ]
+    finished: list[tuple[datetime, Sleep]] = []
+    for session in sessions:
+        end = parse_time(session.end_time)
+        if session.summary is None or end is None or (since and end < since):
+            continue
+        finished.append((end, session))
     if not finished:
         return None
 
-    def end(session: Sleep) -> datetime:
-        return parse_time(session.end_time)  # type: ignore[return-value]
-
-    main = [s for s in finished if not (s.metadata and s.metadata.nap)]
-    return max(main or finished, key=end)
+    main = [item for item in finished if not (item[1].metadata and item[1].metadata.nap)]
+    return max(main or finished, key=lambda item: item[0])[1]
 
 
 def stage_minutes(session: Sleep | None, stage: str) -> int | None:
